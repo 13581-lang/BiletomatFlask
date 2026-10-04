@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Automat Biletowy - Flask</title>
+</head>
+<body>
+<div class="container">
+    <h1>Automat Biletowy</h1>
+    
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="messages">
+        {% for category, message in messages %}
+          <div class="alert alert-{{ category }}">{{ message }}</div>
+        {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <div class="layout">
+        <div class="card">
+            <h2>1. Dodaj bilet</h2>
+            <form action="{{ url_for('add_ticket') }}" method="post" id="ticketForm">
+                <label>Typ biletu:</label>
+                <select name="discount" required>
+                    <option value="">-- wybierz --</option>
+                    <option value="normalny">n - normalny</option>
+                    <option value="ulgowy">u - ulgowy</option>
+                </select>
+
+                <label>Rodzaj biletu:</label>
+                <select name="type" id="typeSelect" required>
+                    <option value="">-- wybierz --</option>
+                    <option value="okresowy">o - okresowy</option>
+                    <option value="czasowy">c - czasowy</option>
+                    <option value="jednorazowy">j - jednorazowy</option>
+                </select>
+
+                <label>Okres / czas / obszar:</label>
+                <select name="validity" id="validitySelect" required>
+                    <option value="">-- najpierw wybierz rodzaj --</option>
+                </select>
+
+                <div id="pricePreview" class="price-preview"></div>
+
+                <button type="submit" class="btn btn-primary">Dodaj do koszyka</button>
+            </form>
+        </div>
+
+        <div class="card">
+            <h2>2. Koszyk ({{ cart|length }})</h2>
+            {% if not cart %}
+                <p class="empty">Brak biletów w koszyku</p>
+            {% else %}
+                <table>
+                    <thead><tr><th>Lp.</th><th>Bilet</th><th>Cena</th><th></th></tr></thead>
+                    <tbody>
+                    {% for ticket in cart %}
+                        <tr>
+                            <td>{{ loop.index }}</td>
+                            <td>Bilet {{ ticket.discount }} {{ ticket.type }} {{ ticket.validity }}</td>
+                            <td>{{ "%.2f"|format(ticket.price) }} zł</td>
+                            <td><a href="{{ url_for('remove_ticket', index=loop.index0) }}" class="btn-small">X</a></td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+                <p class="total">Wartość biletów w koszyku: <strong>{{ "%.2f"|format(total) }} zł</strong></p>
+                <a href="{{ url_for('clear_cart') }}" class="btn btn-secondary">Wyczyść koszyk</a>
+            {% endif %}
+
+            {% if cart %}
+            <hr>
+            <h3>3. Zapłać</h3>
+            <form action="{{ url_for('pay') }}" method="post" id="payForm">
+                <label>Wybierz metodę płatności:</label>
+                <select name="payment_method" id="paymentMethod" required>
+                    <option value="">-- wybierz --</option>
+                    <option value="k">k - karta (zbliż kartę)</option>
+                    <option value="g">g - gotówka</option>
+                    <option value="b">b - BLIK</option>
+                </select>
+
+                <div id="cashField" style="display:none;">
+                    <label>Wrzuć pieniądze:</label>
+                    <input type="number" step="0.01" name="paid_amount" placeholder="np. 20">
+                    <small>Do zapłaty: {{ "%.2f"|format(total) }} zł</small>
+                </div>
+
+                <div id="blikField" style="display:none;">
+                    <label>Podaj kod BLIK (6 cyfr):</label>
+                    <input type="text" name="blik_code" maxlength="6" pattern="\d{6}" placeholder="123456">
+                </div>
+
+                <button type="submit" class="btn btn-success">Zapłać i drukuj bilety</button>
+            </form>
+            {% endif %}
+        </div>
+    </div>
+
+    <footer>
+        <p>Flask Biletomat | Cennik z prices.json | Gałąź: main</p>
+    </footer>
+</div>
+
+<script>
+const prices = {{ prices|tojson }};
+
+const validityOptions = {
+    "okresowy": [
+        {value:"polroczny", label:"1 - półroczny"},
+        {value:"miesieczny", label:"2 - miesięczny"},
+        {value:"tygodniowy", label:"3 - tygodniowy"},
+        {value:"jednodniowy", label:"4 - jednodniowy"}
+    ],
+    "czasowy": [
+        {value:"60minutowy", label:"1 - 60 minutowy"},
+        {value:"30minutowy", label:"2 - 30 minutowy"},
+        {value:"10minutowy", label:"3 - 10 minutowy"}
+    ],
+    "jednorazowy": [
+        {value:"miejski", label:"1 - miejski"},
+        {value:"aglomeracyjny", label:"2 - aglomeracyjny"}
+    ]
+};
+
+document.getElementById("typeSelect").addEventListener("change", function(){
+    const type = this.value;
+    const validitySelect = document.getElementById("validitySelect");
+    validitySelect.innerHTML = '<option value="">-- wybierz --</option>';
+    if(validityOptions[type]){
+        validityOptions[type].forEach(opt=>{
+            const o = document.createElement("option");
+            o.value = opt.value;
+            o.textContent = opt.label;
+            validitySelect.appendChild(o);
+        });
+    }
+    updatePrice();
+});
+
+document.getElementById("ticketForm").addEventListener("change", updatePrice);
+
+function updatePrice(){
+    const form = document.getElementById("ticketForm");
+    const discount = form.discount.value;
+    const type = form.type.value;
+    const validity = form.validity.value;
+    const preview = document.getElementById("pricePreview");
+    if(prices[discount] && prices[discount][type] && prices[discount][type][validity]){
+        preview.textContent = `Cena: ${prices[discount][type][validity].toFixed(2)} zł`;
+        preview.style.display = "block";
+    } else {
+        preview.textContent = "";
+        preview.style.display = "none";
+    }
+}
+
+document.getElementById("paymentMethod").addEventListener("change", function(){
+    document.getElementById("cashField").style.display = this.value === "g" ? "block" : "none";
+    document.getElementById("blikField").style.display = this.value === "b" ? "block" : "none";
+});
+</script>
+</body>
+</html>
